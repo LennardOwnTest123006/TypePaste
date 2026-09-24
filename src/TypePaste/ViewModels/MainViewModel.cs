@@ -496,7 +496,14 @@ internal sealed class MainViewModel : ObservableObject
         Progress = 0;
         _readyTimer.Stop();
         SetStatus(StatusKind.Typing, "Typing…", $"Typing into {Shorten(target.DisplayName)} · {stopName} to stop");
-        _host.Overlay.ShowTyping("Typing…", $"0% · {stopName} to stop", target.Window);
+
+        // TypePaste's own windows (the test pad) show their own feedback; the floating card is for other apps.
+        var ownTarget = target.ProcessId == Environment.ProcessId;
+        if (!ownTarget)
+        {
+            _host.Overlay.ShowTyping("Typing…", $"0% · {stopName} to stop", target.Window);
+        }
+
         _host.Tray.SetTooltip("TypePaste — typing…");
         App.Log.Info($"Typing {text.Length} code units into '{target.ProcessName}' ({options.Speed}, {options.Method}).");
 
@@ -528,11 +535,11 @@ internal sealed class MainViewModel : ObservableObject
 
         Progress = result.TotalLength == 0 ? 1 : (double)result.TypedLength / result.TotalLength;
         App.Log.Info($"Typing finished: {result.Outcome}, {result.TypedLength}/{result.TotalLength} in {result.Elapsed.TotalMilliseconds:F0} ms.");
-        ReportResult(result, text, target);
+        ReportResult(result, text, target, showOverlay: !ownTarget);
         return result;
     }
 
-    private void ReportResult(TypingResult result, string text, TypingTarget target)
+    private void ReportResult(TypingResult result, string text, TypingTarget target, bool showOverlay)
     {
         var typed = TextStatistics.CountCharacters(text, result.TypedLength);
         var total = Stats.Length == text.Length ? Stats.Characters : TextStatistics.CountCharacters(text, text.Length);
@@ -545,7 +552,11 @@ internal sealed class MainViewModel : ObservableObject
             case TypingOutcome.Completed:
                 var detail = $"Typed {Format.Count(typed, "character", "characters")} in {Format.Duration(result.Elapsed)}{skipped}.";
                 SetStatus(StatusKind.Completed, "Completed", detail);
-                _host.Overlay.ShowMessage(OverlayKind.Success, "Completed", detail, target.Window, ResultOverlayDuration);
+                if (showOverlay)
+                {
+                    _host.Overlay.ShowMessage(OverlayKind.Success, "Completed", detail, target.Window, ResultOverlayDuration);
+                }
+
                 break;
 
             case TypingOutcome.Cancelled:
@@ -559,7 +570,11 @@ internal sealed class MainViewModel : ObservableObject
                 };
                 var stoppedDetail = $"{reason} after {typed.ToString("N0")} of {Format.Count(total, "character", "characters")}.";
                 SetStatus(StatusKind.Stopped, "Stopped", stoppedDetail);
-                _host.Overlay.ShowMessage(OverlayKind.Warning, "Stopped", stoppedDetail, target.Window, ResultOverlayDuration);
+                if (showOverlay)
+                {
+                    _host.Overlay.ShowMessage(OverlayKind.Warning, "Stopped", stoppedDetail, target.Window, ResultOverlayDuration);
+                }
+
                 break;
 
             case TypingOutcome.InputBlocked:

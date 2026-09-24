@@ -426,27 +426,27 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
         report.Check("Test typing button: built-in test pad verifies exact text", () =>
         {
             app.Start(Settings());
-            app.LoadText(Samples.Multiline + "\n" + Samples.Unicode + "\n" + Samples.Symbols);
+            var text = Samples.Multiline + "\n" + Samples.Unicode + "\n" + Samples.Symbols;
+            app.LoadText(text);
             app.Restore();
             Win32.ClickCenter(app.MainWindow);
             app.Invoke("TestButton");
+
+            // Like a user, just watch: UI Automation queries into TypePaste's UI thread while it is receiving the
+            // keystrokes would interfere with the very thing being measured.
+            Thread.Sleep(6000);
             string title = string.Empty;
             Wait.Until(() => (title = app.FindAnywhere("TestPadResultTitle")?.Current.Name ?? string.Empty).Length > 0, TimeSpan.FromSeconds(60), "test pad result");
             Thread.Sleep(400);
             report.Screenshot("test-pad-result");
             var detail = app.FindAnywhere("TestPadResultDetail")?.Current.Name;
-            if (app.FindAnywhere("TestPadClose") is { } close)
-            {
-                ((System.Windows.Automation.InvokePattern)close.GetCurrentPattern(System.Windows.Automation.InvokePattern.Pattern)).Invoke();
-            }
-
             if (title != "Perfect match")
             {
                 // Show exactly what arrived around the first difference.
                 var typed = app.FindAnywhere("TestPadTextBox") is { } box && box.TryGetCurrentPattern(System.Windows.Automation.ValuePattern.Pattern, out var value)
                     ? ((System.Windows.Automation.ValuePattern)value).Current.Value
                     : string.Empty;
-                var expected = Samples.AsEditControl(Samples.Multiline + "\n" + Samples.Unicode + "\n" + Samples.Symbols);
+                var expected = Samples.AsEditControl(text);
                 var index = 0;
                 while (index < Math.Min(expected.Length, typed.Length) && expected[index] == typed[index])
                 {
@@ -454,6 +454,11 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
                 }
 
                 detail += $" | expected …{Assert.Snippet(expected, index)}… got …{Assert.Snippet(typed, index)}… (lengths {expected.Length}/{typed.Length})";
+            }
+
+            if (app.FindAnywhere("TestPadClose") is { } close)
+            {
+                ((System.Windows.Automation.InvokePattern)close.GetCurrentPattern(System.Windows.Automation.InvokePattern.Pattern)).Invoke();
             }
 
             Assert.That(title == "Perfect match", $"test pad says '{title}': {detail}");
