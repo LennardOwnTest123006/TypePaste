@@ -174,6 +174,34 @@ internal static unsafe class Win32
     public const uint SWP_NOMOVE = 0x2;
     public const uint SWP_SHOWWINDOW = 0x40;
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NOTIFYICONIDENTIFIER
+    {
+        public int cbSize;
+        public nint hWnd;
+        public uint uID;
+        public Guid guidItem;
+    }
+
+    [DllImport("shell32.dll")]
+    private static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER identifier, out RECT iconLocation);
+
+    /// <summary>Returns the screen rectangle of a notification-area icon, or null if it does not exist.</summary>
+    public static RECT? NotifyIconRect(nint owner, uint id)
+    {
+        var identifier = new NOTIFYICONIDENTIFIER { cbSize = Marshal.SizeOf<NOTIFYICONIDENTIFIER>(), hWnd = owner, uID = id };
+        return Shell_NotifyIconGetRect(ref identifier, out var rect) == 0 ? rect : null;
+    }
+
+    public const int WM_GETICON = 0x007F;
+
+    /// <summary>Returns the big or small window icon handle (0 if none).</summary>
+    public static nint GetWindowIcon(nint hwnd, bool big)
+    {
+        SendMessageTimeoutW(hwnd, WM_GETICON, big ? 1 : 0, 0, 0, 2000, out var icon);
+        return icon;
+    }
+
     /// <summary>The top-level window that would receive a click at the given screen point.</summary>
     public static nint TopLevelAt(int x, int y) => GetAncestor(WindowFromPoint(new POINT { X = x, Y = y }), 2 /* GA_ROOT */);
 

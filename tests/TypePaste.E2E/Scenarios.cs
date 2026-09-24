@@ -57,6 +57,16 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
             return $"ready in {startup.TotalSeconds:0.0} s; status '{app.Status}' — {app.StatusDetail}";
         });
 
+        report.Check("notification area icon and window icon are present", () =>
+        {
+            var rect = Win32.NotifyIconRect(app.FindMessageWindow(), 1);
+            Assert.That(rect is not null, "TypePaste has no notification area icon");
+            var big = Win32.GetWindowIcon(app.MainWindow, big: true);
+            var small = Win32.GetWindowIcon(app.MainWindow, big: false);
+            Assert.That(big != 0 && small != 0, "the main window has no icon");
+            return $"tray icon at {rect}; window icons present";
+        });
+
         report.Check("single instance: a second launch forwards the text and exits", () =>
         {
             var elapsed = app.LoadText(Samples.Multiline);
