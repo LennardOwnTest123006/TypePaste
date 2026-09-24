@@ -164,10 +164,11 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
                     return IdleWaitResult.Idle;
                 }
 
-                // 2) Apps that forward input elsewhere (Chromium, Electron, WebView2): their UI thread keeps waking up
-                //    while the renderer works through the keystrokes. Once it has stayed asleep for a few milliseconds,
-                //    the previous batch has been processed.
-                if (now - lastActivity >= QuietTicks)
+                // 2) Apps that forward input elsewhere (Chromium, Electron, WebView2) or wait in other ways (WPF): their
+                //    UI thread keeps waking up while the keystrokes are being worked through. Once it has handled the
+                //    batch and then stayed asleep for a few milliseconds, the batch has been processed. (A thread that
+                //    never woke up, e.g. one blocked on disk I/O, has not processed anything yet.)
+                if (woke && now - lastActivity >= QuietTicks)
                 {
                     _idleQuiet++;
                     _lastContextSwitches = snapshot.ContextSwitches;
@@ -176,8 +177,8 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
 
                 if (now >= deadline)
                 {
+                    // Keep the reference from the last idle point: the thread has certainly run since then.
                     _idleTimeouts++;
-                    _lastContextSwitches = snapshot.ContextSwitches;
                     return IdleWaitResult.TimedOut;
                 }
 

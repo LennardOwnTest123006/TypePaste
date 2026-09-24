@@ -22,8 +22,18 @@ public sealed class TypingEngine
     /// <summary>Maximum time to wait for the target to process one instant-mode batch.</summary>
     public static readonly TimeSpan IdleTimeout = TimeSpan.FromMilliseconds(100);
 
-    /// <summary>After this many consecutive idle timeouts the engine switches to fixed pacing for the run.</summary>
+    /// <summary>
+    /// If the target is never seen idle within this many attempts (for example a game loop), the engine switches to
+    /// fixed pacing for the run.
+    /// </summary>
     public const int MaxConsecutiveIdleTimeouts = 5;
+
+    /// <summary>
+    /// How long to keep waiting for a target that was idle before but is busy now (for example a text box that slows
+    /// down as its text grows). Sending on regardless would pile up keystrokes, and Windows discards input once a
+    /// thread's input queue overflows.
+    /// </summary>
+    public static readonly TimeSpan MaxBusyWait = TimeSpan.FromSeconds(2);
 
     /// <summary>Pause between instant-mode batches when idle detection is unavailable.</summary>
     public static readonly TimeSpan FallbackBatchPause = TimeSpan.FromMilliseconds(1);
@@ -88,6 +98,7 @@ public sealed class TypingEngine
         private int _skipped;
         private bool _useIdleDetection = true;
         private int _consecutiveIdleTimeouts;
+        private int _idleSuccesses;
 
         public TypingRun(TypingEngine engine, string text, TypingTarget target, TypingOptions options, TypingProgress progress, CancellationToken cancellationToken)
         {
@@ -285,25 +296,44 @@ public sealed class TypingEngine
         {
             if (_useIdleDetection)
             {
-                switch (_platform.WaitForTargetIdle(_target, IdleTimeout))
+                var budget = _engine.ToTicks(MaxBusyWait);
+                long waited = 0;
+                while (true)
                 {
-                    case IdleWaitResult.Idle:
+                    var started = _platform.GetTimestamp();
+                    var result = _platform.WaitForTargetIdle(_target, IdleTimeout);
+                    if (result == IdleWaitResult.Idle)
+                    {
+                        _idleSuccesses++;
                         _consecutiveIdleTimeouts = 0;
                         return;
+                    }
 
-                    case IdleWaitResult.TimedOut:
-                        // The target may simply be busy (heavy app), or it never idles in a message wait (for example
-                        // a game loop). After several timeouts in a row, switch to fixed pacing for this run.
+                    if (result == IdleWaitResult.NotSupported)
+                    {
+                        _useIdleDetection = false;
+                        break;
+                    }
+
+                    if (_idleSuccesses == 0)
+                    {
+                        // Never seen idle (for example a game loop that polls for messages): after a few attempts,
+                        // use fixed pacing for the rest of this run.
                         if (++_consecutiveIdleTimeouts >= MaxConsecutiveIdleTimeouts)
                         {
                             _useIdleDetection = false;
                         }
 
                         return;
+                    }
 
-                    default:
-                        _useIdleDetection = false;
-                        break;
+                    // The target has been idle before, so it is just busy with earlier keystrokes: keep waiting (while
+                    // staying responsive to stop requests) instead of flooding its input queue.
+                    waited += _platform.GetTimestamp() - started;
+                    if (waited >= budget || CheckInterruption() is not null)
+                    {
+                        return;
+                    }
                 }
             }
 

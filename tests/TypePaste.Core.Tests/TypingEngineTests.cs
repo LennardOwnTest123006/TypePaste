@@ -292,6 +292,51 @@ public class TypingEngineTests
     }
 
     [Fact]
+    public void Keeps_waiting_for_a_busy_target_that_was_idle_before()
+    {
+        // Idle after the first batch, then busy for three waits, then idle again.
+        var platform = new FakeTypingPlatform { IdleSequence = call => call is >= 1 and <= 3 ? IdleWaitResult.TimedOut : IdleWaitResult.Idle };
+        var text = new string('x', 320);
+
+        var result = Run(platform, text, new TypingOptions { InstantBatchSize = 32 });
+
+        Assert.Equal(TypingOutcome.Completed, result.Outcome);
+        Assert.Equal(10, platform.BatchSizes.Count);
+        Assert.All(platform.BatchSizes, size => Assert.Equal(64, size));
+        Assert.Equal(13, platform.IdleWaits);
+
+        // The second batch waited until the target was idle again before the third one was sent.
+        Assert.True(platform.BatchTimes[2] - platform.BatchTimes[1] >= 300_000);
+    }
+
+    [Fact]
+    public void Continues_after_the_busy_wait_budget_when_a_target_stays_busy()
+    {
+        var platform = new FakeTypingPlatform { IdleSequence = call => call == 0 ? IdleWaitResult.Idle : IdleWaitResult.TimedOut };
+
+        var result = Run(platform, new string('x', 96), new TypingOptions { InstantBatchSize = 32 });
+
+        Assert.Equal(TypingOutcome.Completed, result.Outcome);
+        Assert.All(platform.BatchSizes, size => Assert.Equal(64, size));
+        var gap = platform.BatchTimes[2] - platform.BatchTimes[1];
+        Assert.InRange(gap, 2_000_000, 2_200_000);
+    }
+
+    [Fact]
+    public void Stop_request_is_honoured_while_waiting_for_a_busy_target()
+    {
+        var platform = new FakeTypingPlatform { IdleSequence = call => call == 0 ? IdleWaitResult.Idle : IdleWaitResult.TimedOut };
+        var stopAt = platform.Now + 400_000;
+        platform.StopKeyProvider = () => platform.Now >= stopAt;
+
+        var result = Run(platform, new string('x', 320), new TypingOptions { InstantBatchSize = 32 });
+
+        Assert.Equal(TypingOutcome.Cancelled, result.Outcome);
+        Assert.Equal(64, result.TypedLength);
+        Assert.True(platform.Now - stopAt < 200_000, "the stop request must end the busy wait promptly");
+    }
+
+    [Fact]
     public void Skips_untypeable_control_characters_and_reports_them()
     {
         var platform = new FakeTypingPlatform();

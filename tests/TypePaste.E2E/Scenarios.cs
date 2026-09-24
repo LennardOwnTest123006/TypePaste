@@ -109,7 +109,7 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
         report.Check("all printable ASCII + symbols", () => TypeWithHotkey(Plain, Samples.Symbols));
         report.Check("Unicode: accents, CJK, RTL, emoji, combining marks", () => TypeWithHotkey(Plain, Samples.Unicode));
         report.Check("tab characters", () => TypeWithHotkey(Plain, Samples.Tabs));
-        report.Check("very long text (100,000 characters)", () => TypeWithHotkey(Plain, Samples.Long(100_000)));
+        report.Check("very long text (100,000 characters)", () => TypeWithHotkey(Plain, Samples.Long(100_000), TimeoutFor(100_000, 250)));
     }
 
     private void TypingIntoRichEdit()

@@ -26,6 +26,9 @@ internal sealed class FakeTypingPlatform : ITypingPlatform
 
     public IdleWaitResult IdleResult { get; set; } = IdleWaitResult.Idle;
 
+    /// <summary>Optional result per idle-wait call (by call index); overrides <see cref="IdleResult"/>.</summary>
+    public Func<int, IdleWaitResult>? IdleSequence { get; set; }
+
     /// <summary>Virtual time an idle wait takes.</summary>
     public long IdleWaitCost { get; set; } = 50;
 
@@ -93,9 +96,10 @@ internal sealed class FakeTypingPlatform : ITypingPlatform
 
     public IdleWaitResult WaitForTargetIdle(TypingTarget target, TimeSpan timeout)
     {
+        var result = IdleSequence?.Invoke(IdleWaits) ?? IdleResult;
         IdleWaits++;
-        Now += IdleResult == IdleWaitResult.TimedOut ? (long)(timeout.TotalSeconds * TimestampFrequency) : IdleWaitCost;
-        return IdleResult;
+        Now += result == IdleWaitResult.TimedOut ? (long)(timeout.TotalSeconds * TimestampFrequency) : IdleWaitCost;
+        return result;
     }
 
     public IKeyboardLayoutMapper? CreateLayoutMapper(TypingTarget target) => Layout;
