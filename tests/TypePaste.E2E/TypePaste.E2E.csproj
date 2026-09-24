@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    End-to-end test harness for Windows. It installs "TypePaste Setup.exe", drives the real TypePaste app with
+    simulated hotkeys, checks the text that arrives in real target windows (WinForms TextBox, RichEdit, Notepad,
+    Microsoft Edge), takes screenshots and finally uninstalls. Run on Windows 10/11 (or a GitHub Windows runner).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>TypePaste.E2E</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+</Project>
