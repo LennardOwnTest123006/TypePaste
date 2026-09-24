@@ -1,0 +1,107 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build app and installer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install NSIS
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis
+
+      - name: Unit tests, publish and installer
+        run: ./build/build.sh
+
+      - name: Build end-to-end test harness
+        run: dotnet publish tests/TypePaste.E2E -c Release -r win-x64 --self-contained true -o artifacts/e2e --nologo
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: TypePaste-Setup
+          path: |
+            artifacts/TypePaste Setup.exe
+            artifacts/TypePaste Setup.exe.sha256
+          if-no-files-found: error
+
+      - name: Upload end-to-end kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-kit
+          path: |
+            artifacts/TypePaste Setup.exe
+            artifacts/publish-files.txt
+            artifacts/e2e/
+            src/TypePaste/Assets/TypePaste.ico
+          if-no-files-found: error
+          retention-days: 7
+
+  e2e:
+    name: End-to-end on ${{ matrix.os }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows-2022 is based on Windows 10 (21H2), windows-2025 on Windows 11 (24H2).
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-kit
+          path: kit
+
+      - name: Install, test typing, uninstall
+        shell: pwsh
+        run: |
+          & "kit/artifacts/e2e/TypePaste.E2E.exe" --setup "kit/artifacts/TypePaste Setup.exe" `
+            --ico "kit/src/TypePaste/Assets/TypePaste.ico" --files "kit/artifacts/publish-files.txt" --out "e2e-results"
+          exit $LASTEXITCODE
+
+      - name: Upload results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-${{ matrix.os }}
+          path: e2e-results/
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, e2e]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: TypePaste-Setup
+          path: release
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" "release/TypePaste Setup.exe" "release/TypePaste Setup.exe.sha256" \
+            --repo "${GITHUB_REPOSITORY}" --title "TypePaste ${GITHUB_REF_NAME#v}" \
+            --notes "Download **TypePaste Setup.exe** and run it. Windows 10/11 (64-bit). No other downloads required."

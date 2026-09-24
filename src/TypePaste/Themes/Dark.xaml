@@ -1,0 +1,68 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- TypePaste dark palette (deep navy, matching the logo). Keys must match Light.xaml. -->
+    <Color x:Key="TitleBarColor">#0D1024</Color>
+    <Color x:Key="ShadowColor">#000000</Color>
+    <Color x:Key="AccentColor">#5B8CFF</Color>
+
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#0D1024" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#151A33" />
+    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#0F1329" />
+    <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#1E2444" />
+    <SolidColorBrush x:Key="SurfacePressedBrush" Color="#252C52" />
+    <SolidColorBrush x:Key="CardBorderBrush" Color="#252B4D" />
+    <SolidColorBrush x:Key="StrongBorderBrush" Color="#343C66" />
+
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#EEF1FF" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A3ACD0" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#6F7899" />
+    <SolidColorBrush x:Key="TextOnAccentBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PlaceholderBrush" Color="#646D8F" />
+
+    <SolidColorBrush x:Key="AccentBrush" Color="#4C7DFF" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#6A92FF" />
+    <SolidColorBrush x:Key="AccentTextBrush" Color="#8FB0FF" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#294C7DFF" />
+    <SolidColorBrush x:Key="FocusRingBrush" Color="#A06A92FF" />
+    <SolidColorBrush x:Key="SelectionBrush" Color="#5B8CFF" />
+    <LinearGradientBrush x:Key="AccentGradientBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0" Color="#3A78FF" />
+        <GradientStop Offset="1" Color="#8A5CFF" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AccentGradientHoverBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0" Color="#528AFF" />
+        <GradientStop Offset="1" Color="#9C73FF" />
+    </LinearGradientBrush>
+
+    <SolidColorBrush x:Key="SuccessBrush" Color="#34D17A" />
+    <SolidColorBrush x:Key="SuccessSoftBrush" Color="#2434D17A" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#F5B53D" />
+    <SolidColorBrush x:Key="WarningSoftBrush" Color="#26F5B53D" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#FF5C66" />
+    <SolidColorBrush x:Key="DangerHoverBrush" Color="#FF7780" />
+    <SolidColorBrush x:Key="DangerSoftBrush" Color="#26FF5C66" />
+
+    <LinearGradientBrush x:Key="KeycapBodyBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#3553D8" />
+        <GradientStop Offset="1" Color="#1A2780" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="KeycapFaceBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#FFFFFF" />
+        <GradientStop Offset="1" Color="#DCE4FF" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="KeycapTextBrush" Color="#1B2A78" />
+
+    <SolidColorBrush x:Key="SegmentBackgroundBrush" Color="#0F1329" />
+    <SolidColorBrush x:Key="SegmentSelectedBrush" Color="#27305C" />
+    <SolidColorBrush x:Key="SegmentSelectedTextBrush" Color="#FFFFFF" />
+
+    <SolidColorBrush x:Key="ToggleOffBrush" Color="#3A4270" />
+    <SolidColorBrush x:Key="ToggleKnobBrush" Color="#FFFFFF" />
+
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#665F6C9E" />
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#AA7C89BD" />
+
+    <SolidColorBrush x:Key="ScrimBrush" Color="#99040614" />
+    <SolidColorBrush x:Key="OverlayBackgroundBrush" Color="#F2141936" />
+    <SolidColorBrush x:Key="OverlayBorderBrush" Color="#39447A" />
+</ResourceDictionary>

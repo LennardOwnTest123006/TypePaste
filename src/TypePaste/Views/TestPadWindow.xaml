@@ -1,0 +1,60 @@
+<Window x:Class="TypePaste.Views.TestPadWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TypePaste — Test pad"
+        AutomationProperties.AutomationId="TestPadWindow"
+        Icon="/Assets/TypePaste.ico"
+        Style="{StaticResource AppWindowStyle}"
+        Width="760" Height="560" MinWidth="520" MinHeight="380"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Grid Margin="24,18,24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="Test pad" Style="{StaticResource TitleText}" FontSize="19" />
+            <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,0"
+                       Text="TypePaste types your text into this box using the current settings, then checks that every character arrived exactly." />
+        </StackPanel>
+
+        <Grid Grid.Row="1" Margin="0,14,0,0">
+            <Border Style="{StaticResource CardShadow}" />
+            <Border Style="{StaticResource Card}">
+                <TextBox x:Name="TestBox" Style="{StaticResource EditorTextBox}" FontSize="14"
+                         AutomationProperties.AutomationId="TestPadTextBox" AutomationProperties.Name="Test pad text" />
+            </Border>
+        </Grid>
+
+        <Border x:Name="ResultBanner" Grid.Row="2" Margin="0,14,0,0" CornerRadius="12" Padding="14,10" Visibility="Collapsed"
+                AutomationProperties.AutomationId="TestPadResult">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="ResultGlyph" Style="{StaticResource IconText}" FontSize="18" Margin="0,1,12,0" VerticalAlignment="Top" />
+                <StackPanel Grid.Column="1">
+                    <TextBlock x:Name="ResultTitle" FontWeight="SemiBold" AutomationProperties.AutomationId="TestPadResultTitle" />
+                    <TextBlock x:Name="ResultDetail" Style="{StaticResource CaptionText}" Margin="0,2,0,0"
+                               AutomationProperties.AutomationId="TestPadResultDetail" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="RunAgainButton" Style="{StaticResource SecondaryButton}" Click="RunAgain_Click"
+                    AutomationProperties.AutomationId="TestPadRunAgain">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource IconText}" Text="&#xE72C;" Margin="0,0,8,0" />
+                    <TextBlock Text="Run again" />
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource PrimaryButton}" Content="Close" Margin="10,0,0,0" MinWidth="96" Click="Close_Click" IsCancel="True"
+                    AutomationProperties.AutomationId="TestPadClose" />
+        </StackPanel>
+    </Grid>
+</Window>
