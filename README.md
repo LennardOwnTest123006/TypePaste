@@ -26,6 +26,9 @@ Run **`TypePaste Setup.exe`** and follow the wizard. It installs TypePaste to `C
 Start menu shortcut and (optionally) a desktop shortcut and sign-in start. Everything TypePaste needs is included —
 no .NET or other runtime has to be installed. Uninstall from *Settings → Apps* or the Start menu like any other app.
 
+The installer is not code-signed, so Windows SmartScreen may show "Windows protected your PC" the first time; click
+**More info → Run anyway**.
+
 Silent install/uninstall for administrators:
 
 ```
@@ -122,14 +125,18 @@ For every character TypePaste sends a key-down and key-up *Unicode packet* throu
 to the focused control as a normal character message, independent of the keyboard layout. Line breaks (CRLF, CR or
 LF) become one Enter (or Shift+Enter) key press; surrogate pairs (emoji) are always sent together.
 
-In *Instant* mode keystrokes go out in small batches. After each batch TypePaste checks the scheduler state of the
-target's input thread (`NtQuerySystemInformation`) and continues as soon as the target has processed its input
-queue. This gives maximum speed for each individual app, keeps Esc and focus-change stops immediate, and avoids
-flooding slow apps. The paced modes send one keystroke at a time on a precise high-resolution timer.
+In *Instant* mode keystrokes go out in batches of up to 32 characters. After each batch TypePaste waits until the
+target has processed them: it watches the scheduler state of the target's input thread (`NtQuerySystemInformation`)
+— a classic Win32 app is done once its thread blocks in a message wait; a Chromium/Electron/WebView2 app is done once
+its UI thread, which keeps waking up while the renderer works through the keystrokes, has gone quiet. For its own
+windows (the test pad) TypePaste uses the WPF dispatcher instead. This gives each app the maximum speed it can
+handle, keeps Esc and focus-change stops immediate (only the last batch may still arrive), and never floods a slow
+app — Windows discards keystrokes once an app's input queue overflows. The paced modes send one keystroke at a time
+on a precise high-resolution timer.
 
 ## Tests
 
-- `dotnet test tests/TypePaste.Core.Tests` — 88 unit tests for the engine, keystroke planner, statistics, hotkeys
+- `dotnet test tests/TypePaste.Core.Tests` — 91 unit tests for the engine, keystroke planner, statistics, hotkeys
   and settings (runs on any OS).
 - `tests/TypePaste.E2E` — Windows end-to-end suite used by CI on Windows Server 2022 (Windows 10 based) and
   Windows Server 2025 (Windows 11 based). It installs `TypePaste Setup.exe` silently, verifies files, shortcuts,
@@ -137,7 +144,9 @@ flooding slow apps. The paced modes send one keystroke at a time on a precise hi
   WinForms TextBox, a RichEdit control, Notepad and a Microsoft Edge text area (multi-line text, all ASCII symbols,
   Unicode and emoji, 100,000-character text, tabs), tests stopping with Esc, focus changes, closed targets, repeated
   F6 presses, every speed and input mode, custom hotkeys, the Start countdown, the test pad, tray mode and themes,
-  takes screenshots, and finally uninstalls and verifies that nothing is left behind.
+  takes screenshots, and finally uninstalls and verifies that nothing is left behind. It also asserts that every
+  target has received the complete text within 3 seconds of TypePaste reporting completion (no hidden backlog).
+  The report and screenshots are attached to each CI run as `e2e-results-*` artifacts.
 
 ## License
 
