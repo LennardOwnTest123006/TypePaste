@@ -44,11 +44,29 @@ public partial class TestPadWindow : Window
         Keyboard.Focus(TestBox);
     }
 
-    /// <summary>Compares what arrived in the pad with what should have arrived and shows the verdict.</summary>
-    internal void ShowVerification(string source, TypingResult result)
+    /// <summary>
+    /// Compares what arrived in the pad with what should have arrived and shows the verdict. Keystrokes that are still
+    /// queued are given up to a few seconds to arrive first.
+    /// </summary>
+    internal async Task VerifyAsync(string source, TypingResult result)
     {
         var expected = ExpectedText(source, result.TypedLength);
         var actual = TestBox.Text;
+        var lastLength = actual.Length;
+        var quietSince = DateTime.UtcNow;
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!string.Equals(actual, expected, StringComparison.Ordinal) && DateTime.UtcNow < deadline &&
+               DateTime.UtcNow - quietSince < TimeSpan.FromMilliseconds(800))
+        {
+            await Task.Delay(50);
+            actual = TestBox.Text;
+            if (actual.Length != lastLength)
+            {
+                lastLength = actual.Length;
+                quietSince = DateTime.UtcNow;
+            }
+        }
+
         var mismatch = FirstDifference(expected, actual);
         var characters = TextStatistics.CountCharacters(source, result.TypedLength);
         var culture = CultureInfo.CurrentCulture;

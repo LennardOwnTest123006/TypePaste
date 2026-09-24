@@ -474,7 +474,7 @@ internal sealed class MainViewModel : ObservableObject
             var result = await TypeAsync(session, text, capture.Target);
             if (_testPad == pad)
             {
-                pad.ShowVerification(text, result);
+                await pad.VerifyAsync(text, result);
             }
         }
         finally

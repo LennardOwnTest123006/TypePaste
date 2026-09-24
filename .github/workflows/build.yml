@@ -17,6 +17,8 @@ concurrency:
 jobs:
   build:
     name: Build app and installer
+    # Branch pushes already run the pipeline; only build pull requests coming from forks a second time.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
