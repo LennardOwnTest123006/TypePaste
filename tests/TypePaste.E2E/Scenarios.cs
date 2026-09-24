@@ -59,12 +59,16 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
 
         report.Check("notification area icon and window icon are present", () =>
         {
+            // Windows may keep new icons in the hidden overflow area, where no position is reported; the app logs a
+            // warning if registering the icon failed.
             var rect = Win32.NotifyIconRect(app.FindMessageWindow(), 1);
-            Assert.That(rect is not null, "TypePaste has no notification area icon");
+            var log = Path.Combine(app.DataDirectory, "TypePaste.log");
+            var failed = File.Exists(log) && File.ReadAllText(log).Contains("Could not add the notification area icon", StringComparison.Ordinal);
+            Assert.That(!failed, "TypePaste could not add its notification area icon");
             var big = Win32.GetWindowIcon(app.MainWindow, big: true);
             var small = Win32.GetWindowIcon(app.MainWindow, big: false);
             Assert.That(big != 0 && small != 0, "the main window has no icon");
-            return $"tray icon at {rect}; window icons present";
+            return $"tray icon registered ({(rect is { } r ? $"shown at {r}" : "in the overflow area")}); window icons present";
         });
 
         report.Check("single instance: a second launch forwards the text and exits", () =>

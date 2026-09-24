@@ -90,13 +90,15 @@ internal sealed class TypingSession : IDisposable
         var progress = Progress;
         var token = _cancellation.Token;
         var capsLock = Keyboard.IsKeyToggled(Key.CapsLock);
+        var uiDispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+        var uiThreadId = (int)NativeMethods.GetCurrentThreadId();
         var completion = new TaskCompletionSource<TypingResult>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var thread = new Thread(() =>
         {
             try
             {
-                using var platform = new Win32TypingPlatform(startHotkey, stopHotkey, capsLock, options.Speed == SpeedMode.Instant);
+                using var platform = new Win32TypingPlatform(startHotkey, stopHotkey, capsLock, options.Speed == SpeedMode.Instant, uiDispatcher, uiThreadId);
                 var result = new TypingEngine(platform).Run(text, target, options, progress, token);
                 App.Log.Info($"Pacing: {platform.Diagnostics}.");
                 completion.TrySetResult(result);

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Windows.Threading;
 using TypePaste.Core.Hotkeys;
 using TypePaste.Core.Input;
 using TypePaste.Core.Typing;
@@ -27,17 +28,29 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
     private readonly PreciseWaiter _waiter = new();
     private INPUT[] _inputs = new INPUT[256];
     private uint? _lastContextSwitches;
+    private readonly Dispatcher? _uiDispatcher;
+    private readonly int _uiThreadId;
+    private DispatcherOperation? _pendingDispatcherIdle;
+    private int _idleDispatcher;
     private int _idleMessageWait;
     private int _idleQuiet;
     private int _idleTimeouts;
     private long _idleWaitTicks;
 
-    public Win32TypingPlatform(HotkeyGesture startHotkey, HotkeyGesture stopHotkey, bool capsLockOn, bool useIdleDetection)
+    /// <param name="uiDispatcher">
+    /// TypePaste's own UI dispatcher. When TypePaste types into one of its own windows (the test pad), idleness is
+    /// detected precisely through the dispatcher instead of the scheduler state.
+    /// </param>
+    /// <param name="uiThreadId">Native thread id of <paramref name="uiDispatcher"/>.</param>
+    public Win32TypingPlatform(HotkeyGesture startHotkey, HotkeyGesture stopHotkey, bool capsLockOn, bool useIdleDetection,
+        Dispatcher? uiDispatcher = null, int uiThreadId = 0)
     {
         _startHotkey = startHotkey;
         _stopHotkey = stopHotkey;
         _capsLockOn = capsLockOn;
         _probe = useIdleDetection ? ThreadStateProbe.TryCreate() : null;
+        _uiDispatcher = uiDispatcher;
+        _uiThreadId = uiThreadId;
     }
 
     public long TimestampFrequency => Stopwatch.Frequency;
@@ -113,7 +126,7 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
 
     /// <summary>Human-readable pacing statistics of this run (for the diagnostics log).</summary>
     public string Diagnostics =>
-        $"idle probe {(_probe is null ? "unavailable" : "active")}: {_idleMessageWait} message-wait, {_idleQuiet} quiet, " +
+        $"idle probe {(_probe is null ? "unavailable" : "active")}: {_idleMessageWait} message-wait, {_idleQuiet} quiet, {_idleDispatcher} dispatcher, " +
         $"{_idleTimeouts} timeouts, {_idleWaitTicks * 1000.0 / Stopwatch.Frequency:F0} ms waiting";
 
     private static bool IsAlive(nint window) => IsWindow(window) && IsWindowVisible(window);
@@ -129,6 +142,11 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
 
     public IdleWaitResult WaitForTargetIdle(TypingTarget target, TimeSpan timeout)
     {
+        if (_uiDispatcher is not null && target.ProcessId == Environment.ProcessId && target.ThreadId == _uiThreadId)
+        {
+            return WaitForOwnDispatcherIdle(timeout);
+        }
+
         if (_probe is null)
         {
             return IdleWaitResult.NotSupported;
@@ -184,6 +202,37 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
 
                 Thread.Yield();
             }
+        }
+        finally
+        {
+            _idleWaitTicks += Stopwatch.GetTimestamp() - start;
+        }
+    }
+
+    /// <summary>
+    /// WPF runs operations below input priority only once no input is pending, so a no-op queued at ContextIdle
+    /// completes exactly when every keystroke sent so far has been processed (and laid out).
+    /// </summary>
+    private IdleWaitResult WaitForOwnDispatcherIdle(TimeSpan timeout)
+    {
+        var start = Stopwatch.GetTimestamp();
+        try
+        {
+            _pendingDispatcherIdle ??= _uiDispatcher!.InvokeAsync(static () => { }, DispatcherPriority.ContextIdle);
+            if (_pendingDispatcherIdle.Task.Wait(timeout))
+            {
+                _pendingDispatcherIdle = null;
+                _idleDispatcher++;
+                return IdleWaitResult.Idle;
+            }
+
+            _idleTimeouts++;
+            return IdleWaitResult.TimedOut;
+        }
+        catch (Exception)
+        {
+            // The dispatcher is shutting down.
+            return IdleWaitResult.NotSupported;
         }
         finally
         {
