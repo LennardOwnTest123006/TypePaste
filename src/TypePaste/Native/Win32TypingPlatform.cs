@@ -31,6 +31,8 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
     private readonly Dispatcher? _uiDispatcher;
     private readonly int _uiThreadId;
     private DispatcherOperation? _pendingDispatcherIdle;
+    private long _pendingDispatcherIdleBatch;
+    private long _batchesSent;
     private int _idleDispatcher;
     private int _idleMessageWait;
     private int _idleQuiet;
@@ -91,6 +93,7 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
             };
         }
 
+        _batchesSent++;
         fixed (INPUT* inputs = _inputs)
         {
             return (int)SendInput((uint)events.Length, inputs, InputSize);
@@ -218,7 +221,14 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
         var start = Stopwatch.GetTimestamp();
         try
         {
-            _pendingDispatcherIdle ??= _uiDispatcher!.InvokeAsync(static () => { }, DispatcherPriority.ContextIdle);
+            // Reuse the request while waiting for the same batch; a request queued before a later batch was sent could
+            // complete before that batch has been processed.
+            if (_pendingDispatcherIdle is null || _pendingDispatcherIdleBatch != _batchesSent)
+            {
+                _pendingDispatcherIdle = _uiDispatcher!.InvokeAsync(static () => { }, DispatcherPriority.ContextIdle);
+                _pendingDispatcherIdleBatch = _batchesSent;
+            }
+
             if (_pendingDispatcherIdle.Task.Wait(timeout))
             {
                 _pendingDispatcherIdle = null;
