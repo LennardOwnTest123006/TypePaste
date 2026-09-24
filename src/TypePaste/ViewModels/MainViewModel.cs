@@ -336,8 +336,8 @@ internal sealed class MainViewModel : ObservableObject
     {
         if (_host.Typing.IsBusy)
         {
-            // A second press while typing must never start a second run.
-            _host.Overlay.ShowMessage(OverlayKind.Info, "Already typing", $"Press {_host.Settings.StopHotkey} to stop.", 0, TimeSpan.FromSeconds(1.5));
+            // A second press while typing (or counting down) never starts a second run; the progress card already
+            // shows how to stop.
             return;
         }
 

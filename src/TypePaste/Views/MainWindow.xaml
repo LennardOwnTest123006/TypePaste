@@ -9,6 +9,10 @@
         Style="{StaticResource AppWindowStyle}"
         Width="1000" Height="700" MinWidth="800" MinHeight="560"
         WindowStartupLocation="CenterScreen">
+    <Window.InputBindings>
+        <KeyBinding Key="O" Modifiers="Control" Command="{Binding OpenFileCommand}" />
+        <KeyBinding Key="OemComma" Modifiers="Control" Command="{Binding OpenSettingsCommand}" />
+    </Window.InputBindings>
     <Window.Resources>
         <conv:EnumEqualsConverter x:Key="EnumEquals" />
         <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
@@ -133,7 +137,7 @@
                         </StackPanel>
                     </Border>
                     <Button Style="{StaticResource IconButton}" Content="&#xE713;" Margin="8,0,-6,0" Command="{Binding OpenSettingsCommand}"
-                            ToolTip="Settings" AutomationProperties.Name="Settings" AutomationProperties.AutomationId="SettingsButton" />
+                            ToolTip="Settings (Ctrl+,)" AutomationProperties.Name="Settings" AutomationProperties.AutomationId="SettingsButton" />
                 </StackPanel>
             </Grid>
 
@@ -152,7 +156,7 @@
                         <Grid Margin="18,10,10,6">
                             <TextBlock Text="Text to type" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button Style="{StaticResource GhostButton}" Command="{Binding OpenFileCommand}" ToolTip="Load a text file"
+                                <Button Style="{StaticResource GhostButton}" Command="{Binding OpenFileCommand}" ToolTip="Load a text file (Ctrl+O)"
                                         AutomationProperties.AutomationId="OpenFileButton">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Style="{StaticResource IconText}" Text="&#xE8E5;" Margin="0,0,7,0" />
