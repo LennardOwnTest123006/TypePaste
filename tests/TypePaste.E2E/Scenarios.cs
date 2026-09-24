@@ -33,6 +33,7 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
         AppBasics();
         TypingIntoTextBox();
         TypingIntoRichEdit();
+        TypingIntoWpf();
         TypingIntoNotepad();
         TypingIntoEdge();
         StoppingAndSafety();
@@ -123,6 +124,35 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
         report.Check("multi-line text", () => TypeWithHotkey(Rich, Samples.Multiline));
         report.Check("Unicode and emoji", () => TypeWithHotkey(Rich, Samples.Unicode));
         report.Check("long text (20,000 characters)", () => TypeWithHotkey(Rich, Samples.Long(20_000)));
+    }
+
+    private void TypingIntoWpf()
+    {
+        report.Area = "F6 → WPF";
+        targets.ShowOnly();
+        WpfTargetHost? wpf = null;
+        try
+        {
+            if (!report.Check("WPF window starts", () =>
+            {
+                wpf = new WpfTargetHost();
+                return "ready";
+            }))
+            {
+                return;
+            }
+
+            var target = new WpfTypingTarget(wpf!);
+            report.Check("multi-line text", () => TypeWithHotkey(target, Samples.Multiline));
+            report.Check("symbols", () => TypeWithHotkey(target, Samples.Symbols));
+            report.Check("Unicode and emoji", () => TypeWithHotkey(target, Samples.Unicode));
+            report.Check("long text (10,000 characters)", () => TypeWithHotkey(target, Samples.Long(10_000)));
+        }
+        finally
+        {
+            wpf?.Show(false);
+            wpf?.Dispose();
+        }
     }
 
     private void TypingIntoNotepad()
@@ -408,6 +438,22 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
             if (app.FindAnywhere("TestPadClose") is { } close)
             {
                 ((System.Windows.Automation.InvokePattern)close.GetCurrentPattern(System.Windows.Automation.InvokePattern.Pattern)).Invoke();
+            }
+
+            if (title != "Perfect match")
+            {
+                // Show exactly what arrived around the first difference.
+                var typed = app.FindAnywhere("TestPadTextBox") is { } box && box.TryGetCurrentPattern(System.Windows.Automation.ValuePattern.Pattern, out var value)
+                    ? ((System.Windows.Automation.ValuePattern)value).Current.Value
+                    : string.Empty;
+                var expected = Samples.AsEditControl(Samples.Multiline + "\n" + Samples.Unicode + "\n" + Samples.Symbols);
+                var index = 0;
+                while (index < Math.Min(expected.Length, typed.Length) && expected[index] == typed[index])
+                {
+                    index++;
+                }
+
+                detail += $" | expected …{Assert.Snippet(expected, index)}… got …{Assert.Snippet(typed, index)}… (lengths {expected.Length}/{typed.Length})";
             }
 
             Assert.That(title == "Perfect match", $"test pad says '{title}': {detail}");
