@@ -28,6 +28,9 @@ public sealed class TypingEngine
     /// <summary>Pause between instant-mode batches when idle detection is unavailable.</summary>
     public static readonly TimeSpan FallbackBatchPause = TimeSpan.FromMilliseconds(1);
 
+    /// <summary>Maximum characters per batch when idle detection is unavailable (caps the rate at a few thousand/s).</summary>
+    public const int FallbackBatchSize = 8;
+
     /// <summary>If the paced schedule falls further behind than this, it is reset instead of catching up in a burst.</summary>
     public static readonly TimeSpan MaxScheduleLag = TimeSpan.FromMilliseconds(50);
 
@@ -122,11 +125,10 @@ public sealed class TypingEngine
                 layoutMode && _platform.IsCapsLockOn());
 
             var instant = _options.Speed == SpeedMode.Instant;
-            var maxStrokesPerBatch = instant ? _options.EffectiveInstantBatchSize : 1;
             var delayTicks = _engine.ToTicks(_options.EffectiveDelayMs);
             var lineBreakTicks = _engine.ToTicks(_options.EffectiveLineBreakDelayMs);
             var maxLagTicks = _engine.ToTicks(MaxScheduleLag);
-            var events = new List<KeyboardEvent>(maxStrokesPerBatch * 8);
+            var events = new List<KeyboardEvent>(_options.EffectiveInstantBatchSize * 8);
             var nextDue = _typingStartedAt;
 
             while (_index < _text.Length)
@@ -137,6 +139,9 @@ public sealed class TypingEngine
                 }
 
                 events.Clear();
+                var maxStrokesPerBatch = !instant ? 1
+                    : _useIdleDetection ? _options.EffectiveInstantBatchSize
+                    : Math.Min(_options.EffectiveInstantBatchSize, FallbackBatchSize);
                 var batchStart = _index;
                 var strokes = 0;
                 var pauseForLineBreak = false;

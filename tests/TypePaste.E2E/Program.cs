@@ -24,6 +24,7 @@ internal static class Program
         var report = new Report(output);
         var environment = DescribeEnvironment();
         Log.Line(environment);
+        Log.Line($"Minimized {Win32.MinimizeConsoleWindows()} console window(s) so clicks cannot land in them.");
 
         var setup = Path.GetFullPath(options["setup"]);
         var ico = Path.GetFullPath(options["ico"]);
@@ -52,6 +53,18 @@ internal static class Program
                 Log.Line($"Scenario run aborted: {ex}");
                 report.Area = "Harness";
                 report.Check("scenario run completed", () => throw ex);
+            }
+
+            var appLog = Path.Combine(app.DataDirectory, "TypePaste.log");
+            if (File.Exists(appLog))
+            {
+                Log.Line("TypePaste diagnostics log:");
+                foreach (var line in File.ReadLines(appLog))
+                {
+                    Console.WriteLine("    " + line);
+                }
+
+                File.Copy(appLog, Path.Combine(output, "TypePaste.log"), overwrite: true);
             }
 
             report.Area = "Uninstaller";

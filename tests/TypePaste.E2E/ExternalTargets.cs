@@ -81,8 +81,8 @@ internal sealed class EdgeTarget : IDisposable
         <script>
         const t = document.getElementById('t');
         function hash(s){let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}return h.toString(16).padStart(8,'0');}
-        let timer; function publish(){document.title='TPE2E|'+t.value.length+'|'+hash(t.value);}
-        t.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(publish,80);});
+        let pending = false; function publish(){document.title='TPE2E|'+t.value.length+'|'+hash(t.value);}
+        t.addEventListener('input',()=>{ if(!pending){ pending=true; setTimeout(()=>{ pending=false; publish(); }, 100); } });
         publish();
         </script></body></html>
         """;

@@ -17,6 +17,7 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
     public const nint InjectionSignature = 0x54505354;
 
     private static readonly long MinWakeTicks = Stopwatch.Frequency * 3 / 1000; // 3 ms
+    private static readonly long QuietTicks = Stopwatch.Frequency * 8 / 1000; // 8 ms
     private static readonly int InputSize = Marshal.SizeOf<INPUT>();
 
     private readonly HotkeyGesture _startHotkey;
@@ -26,6 +27,10 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
     private readonly PreciseWaiter _waiter = new();
     private INPUT[] _inputs = new INPUT[256];
     private uint? _lastContextSwitches;
+    private int _idleMessageWait;
+    private int _idleQuiet;
+    private int _idleTimeouts;
+    private long _idleWaitTicks;
 
     public Win32TypingPlatform(HotkeyGesture startHotkey, HotkeyGesture stopHotkey, bool capsLockOn, bool useIdleDetection)
     {
@@ -81,7 +86,7 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
 
     public TargetState GetTargetState(TypingTarget target)
     {
-        if (!IsWindow(target.Window))
+        if (!IsAlive(target.Window))
         {
             return TargetState.Closed;
         }
@@ -94,20 +99,24 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
             foreground = GetForegroundWindow();
         }
 
-        return foreground != 0 && BelongsToTarget(foreground, target.Window) ? TargetState.Active : TargetState.FocusChanged;
-    }
-
-    /// <summary>True if <paramref name="window"/> is the target or a popup owned by the same top-level window.</summary>
-    public static bool BelongsToTarget(nint window, nint target)
-    {
-        if (window == target)
+        if (foreground == target.Window)
         {
-            return true;
+            return TargetState.Active;
         }
 
-        var rootOwner = GetAncestor(window, GA_ROOTOWNER);
-        return rootOwner != 0 && rootOwner == GetAncestor(target, GA_ROOTOWNER);
+        // A window that is being closed loses activation just before it is destroyed. Report that as "closed"
+        // rather than as a focus change. Any other window becoming active (including a dialog of the target app,
+        // such as "Save changes?") stops typing so keystrokes never land somewhere unexpected.
+        Thread.Sleep(20);
+        return IsAlive(target.Window) ? TargetState.FocusChanged : TargetState.Closed;
     }
+
+    /// <summary>Human-readable pacing statistics of this run (for the diagnostics log).</summary>
+    public string Diagnostics =>
+        $"idle probe {(_probe is null ? "unavailable" : "active")}: {_idleMessageWait} message-wait, {_idleQuiet} quiet, " +
+        $"{_idleTimeouts} timeouts, {_idleWaitTicks * 1000.0 / Stopwatch.Frequency:F0} ms waiting";
+
+    private static bool IsAlive(nint window) => IsWindow(window) && IsWindowVisible(window);
 
     public bool IsStopKeyDown() => !_stopHotkey.IsEmpty && IsKeyDown(_stopHotkey.VirtualKey) && ModifiersDown(_stopHotkey.Modifiers);
 
@@ -127,31 +136,57 @@ internal sealed unsafe class Win32TypingPlatform : ITypingPlatform, IDisposable
 
         var start = Stopwatch.GetTimestamp();
         var deadline = start + (long)(timeout.TotalSeconds * Stopwatch.Frequency);
-        while (true)
+        uint? previousSwitches = null;
+        var lastActivity = start;
+        try
         {
-            if (!_probe.TryQuery(target.ProcessId, target.ThreadId, out var snapshot))
+            while (true)
             {
-                return IdleWaitResult.NotSupported;
+                if (!_probe.TryQuery(target.ProcessId, target.ThreadId, out var snapshot))
+                {
+                    return IdleWaitResult.NotSupported;
+                }
+
+                var now = Stopwatch.GetTimestamp();
+                if (previousSwitches != snapshot.ContextSwitches || !snapshot.IsWaiting)
+                {
+                    previousSwitches = snapshot.ContextSwitches;
+                    lastActivity = now;
+                }
+
+                // 1) Classic Win32 apps: the input thread blocks in a message wait only once its queue is empty.
+                //    Unless it has been scheduled since the last idle state, give the input a moment to arrive.
+                var woke = _lastContextSwitches is null || snapshot.ContextSwitches != _lastContextSwitches;
+                if (snapshot.IsWaitingForMessages && (woke || now - start >= MinWakeTicks))
+                {
+                    _idleMessageWait++;
+                    _lastContextSwitches = snapshot.ContextSwitches;
+                    return IdleWaitResult.Idle;
+                }
+
+                // 2) Apps that forward input elsewhere (Chromium, Electron, WebView2): their UI thread keeps waking up
+                //    while the renderer works through the keystrokes. Once it has stayed asleep for a few milliseconds,
+                //    the previous batch has been processed.
+                if (now - lastActivity >= QuietTicks)
+                {
+                    _idleQuiet++;
+                    _lastContextSwitches = snapshot.ContextSwitches;
+                    return IdleWaitResult.Idle;
+                }
+
+                if (now >= deadline)
+                {
+                    _idleTimeouts++;
+                    _lastContextSwitches = snapshot.ContextSwitches;
+                    return IdleWaitResult.TimedOut;
+                }
+
+                Thread.Yield();
             }
-
-            var now = Stopwatch.GetTimestamp();
-
-            // Idle = blocked in a message wait. Unless the thread has been scheduled since the last idle state
-            // (context switch count changed), give the input a moment to arrive before trusting that.
-            var woke = _lastContextSwitches is null || snapshot.ContextSwitches != _lastContextSwitches;
-            if (snapshot.IsWaitingForMessages && (woke || now - start >= MinWakeTicks))
-            {
-                _lastContextSwitches = snapshot.ContextSwitches;
-                return IdleWaitResult.Idle;
-            }
-
-            if (now >= deadline)
-            {
-                _lastContextSwitches = snapshot.ContextSwitches;
-                return IdleWaitResult.TimedOut;
-            }
-
-            Thread.Yield();
+        }
+        finally
+        {
+            _idleWaitTicks += Stopwatch.GetTimestamp() - start;
         }
     }
 

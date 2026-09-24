@@ -153,6 +153,45 @@ internal static unsafe class Win32
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int vk);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern nint WindowFromPoint(POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern nint GetAncestor(nint hwnd, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    public static readonly nint HWND_TOPMOST = -1;
+    public const uint SWP_NOSIZE = 0x1;
+    public const uint SWP_NOMOVE = 0x2;
+    public const uint SWP_SHOWWINDOW = 0x40;
+
+    /// <summary>The top-level window that would receive a click at the given screen point.</summary>
+    public static nint TopLevelAt(int x, int y) => GetAncestor(WindowFromPoint(new POINT { X = x, Y = y }), 2 /* GA_ROOT */);
+
+    /// <summary>
+    /// Minimizes console windows (such as the runner agent's console) so that test clicks can never land in them;
+    /// a click would start a QuickEdit selection there.
+    /// </summary>
+    public static int MinimizeConsoleWindows()
+    {
+        var consoles = TopLevelWindows(h => IsWindowVisible(h) && GetClassName(h) is "ConsoleWindowClass" or "CASCADIA_HOSTING_WINDOW_CLASS");
+        foreach (var console in consoles)
+        {
+            ShowWindow(console, SW_MINIMIZE);
+        }
+
+        return consoles.Count;
+    }
+
     [DllImport("user32.dll")]
     public static extern bool SetProcessDPIAware();
 
@@ -189,10 +228,27 @@ internal static unsafe class Win32
         Thread.Sleep(120);
     }
 
+    /// <summary>Clicks the center of a window after making sure no other window covers that point.</summary>
     public static void ClickCenter(nint hwnd, int offsetY = 0)
     {
         GetWindowRect(hwnd, out var rect);
-        Click(rect.Left + (rect.Width / 2), rect.Top + (rect.Height / 2) + offsetY);
+        var x = rect.Left + (rect.Width / 2);
+        var y = rect.Top + (rect.Height / 2) + offsetY;
+        var root = GetAncestor(hwnd, 2 /* GA_ROOT */);
+        if (TopLevelAt(x, y) != root)
+        {
+            MinimizeConsoleWindows();
+            SetWindowPos(root, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            Thread.Sleep(200);
+        }
+
+        var covering = TopLevelAt(x, y);
+        if (covering != root)
+        {
+            throw new InvalidOperationException($"({x},{y}) is covered by {Describe(covering)}; not clicking.");
+        }
+
+        Click(x, y);
     }
 
     public static string GetWindowText(nint hwnd)

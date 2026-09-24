@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace TypePaste.E2E;
 
 /// <summary>A text field TypePaste types into during a test.</summary>
@@ -9,11 +11,42 @@ internal interface ITypingTarget
 
     int Length { get; }
 
-    /// <summary>Waits for the field to contain <paramref name="source"/> (normalized) and fails with a description if it does not.</summary>
-    void AssertContains(string source);
+    /// <summary>
+    /// Waits until the field contains exactly <paramref name="source"/> (normalized the way the control stores text) and
+    /// returns how long that took. Fails with a description of the first difference after <paramref name="timeout"/>.
+    /// </summary>
+    TimeSpan WaitForText(string source, TimeSpan timeout);
 
     /// <summary>Waits until the field stops changing and returns its normalized length.</summary>
     int SettledLength();
+}
+
+internal static class TargetWait
+{
+    /// <summary>Polls <paramref name="read"/> until it equals <paramref name="expected"/>.</summary>
+    public static TimeSpan ForText(Func<string> read, string expected, TimeSpan timeout)
+    {
+        var watch = Stopwatch.StartNew();
+        string actual;
+        while (true)
+        {
+            actual = read();
+            if (string.Equals(actual, expected, StringComparison.Ordinal))
+            {
+                return watch.Elapsed;
+            }
+
+            if (watch.Elapsed > timeout)
+            {
+                break;
+            }
+
+            Thread.Sleep(actual.Length > expected.Length ? 0 : 100);
+        }
+
+        Assert.TextEquals(expected, actual);
+        return watch.Elapsed;
+    }
 }
 
 internal sealed class FormTarget(TargetHost host, TargetForm form, string name) : ITypingTarget
@@ -32,13 +65,9 @@ internal sealed class FormTarget(TargetHost host, TargetForm form, string name) 
         host.Focus(form);
     }
 
-    public void AssertContains(string source)
-    {
-        // RichEdit reports "\r" line breaks through WM_GETTEXT and "\n" through .Text; compare normalized text.
-        var expected = Samples.AsEditControl(source);
-        var actual = Wait.Stable(() => Samples.AsEditControl(Text), TimeSpan.FromMilliseconds(700), TimeSpan.FromSeconds(30));
-        Assert.TextEquals(expected, actual);
-    }
+    // RichEdit stores "\r" line breaks and .Text reports "\n"; compare normalized text.
+    public TimeSpan WaitForText(string source, TimeSpan timeout) =>
+        TargetWait.ForText(() => Samples.AsEditControl(Text), Samples.AsEditControl(source), timeout);
 
     public int SettledLength() => Wait.Stable(() => Length, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
 }
@@ -55,12 +84,8 @@ internal sealed class NotepadTypingTarget(NotepadTarget notepad) : ITypingTarget
         notepad.Focus();
     }
 
-    public void AssertContains(string source)
-    {
-        var expected = Samples.AsEditControl(source);
-        var actual = Wait.Stable(() => Samples.AsEditControl(notepad.Text), TimeSpan.FromMilliseconds(700), TimeSpan.FromSeconds(30));
-        Assert.TextEquals(expected, actual);
-    }
+    public TimeSpan WaitForText(string source, TimeSpan timeout) =>
+        TargetWait.ForText(() => Samples.AsEditControl(notepad.Text), Samples.AsEditControl(source), timeout);
 
     public int SettledLength() => Wait.Stable(() => Length, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
 }
@@ -71,19 +96,29 @@ internal sealed class EdgeTypingTarget(EdgeTarget edge) : ITypingTarget
 
     public int Length => edge.State.Length;
 
+    public (int Length, string Hash) State => edge.State;
+
     public void Prepare()
     {
         edge.Clear();
         edge.Focus();
     }
 
-    public void AssertContains(string source)
+    public TimeSpan WaitForText(string source, TimeSpan timeout)
     {
         var expected = Samples.AsTextArea(source);
         var want = (expected.Length, Samples.Fnv1a(expected));
-        var got = Wait.Stable(() => edge.State, TimeSpan.FromSeconds(1.2), TimeSpan.FromSeconds(60));
+        var watch = Stopwatch.StartNew();
+        var got = edge.State;
+        while (got != want && watch.Elapsed < timeout)
+        {
+            Thread.Sleep(100);
+            got = edge.State;
+        }
+
         Assert.That(got == want, $"textarea has length {got.Length} hash {got.Hash}; expected length {want.Length} hash {want.Item2}");
+        return watch.Elapsed;
     }
 
-    public int SettledLength() => Wait.Stable(() => Length, TimeSpan.FromSeconds(1.2), TimeSpan.FromSeconds(30));
+    public int SettledLength() => Wait.Stable(() => Length, TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(60));
 }

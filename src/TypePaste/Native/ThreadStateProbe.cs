@@ -14,6 +14,9 @@ internal readonly record struct ThreadSnapshot(int State, int WaitReason, uint C
     /// happens once its input queue is empty.
     /// </summary>
     public bool IsWaitingForMessages => State == StateWaiting && WaitReason == WaitReasonWrUserRequest;
+
+    /// <summary>True when the thread is blocked in any kind of wait (not running or ready to run).</summary>
+    public bool IsWaiting => State == StateWaiting;
 }
 
 /// <summary>

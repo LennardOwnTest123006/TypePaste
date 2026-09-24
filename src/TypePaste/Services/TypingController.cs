@@ -98,6 +98,7 @@ internal sealed class TypingSession : IDisposable
             {
                 using var platform = new Win32TypingPlatform(startHotkey, stopHotkey, capsLock, options.Speed == SpeedMode.Instant);
                 var result = new TypingEngine(platform).Run(text, target, options, progress, token);
+                App.Log.Info($"Pacing: {platform.Diagnostics}.");
                 completion.TrySetResult(result);
             }
             catch (Exception ex)

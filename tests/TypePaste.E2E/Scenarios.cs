@@ -70,6 +70,10 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
 
     // ------------------------------------------------------------------ Typing into different apps
 
+    /// <summary>
+    /// Loads <paramref name="text"/>, clicks into the target, presses F6 and verifies the exact result. Also checks that
+    /// the target has processed everything shortly after TypePaste reports completion (no hidden keystroke backlog).
+    /// </summary>
     private string TypeWithHotkey(ITypingTarget target, string text, TimeSpan? timeout = null)
     {
         app.LoadText(text);
@@ -80,8 +84,11 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
         var status = app.WaitForResult(timeout ?? TimeoutFor(text.Length));
         var elapsed = watch.Elapsed;
         Assert.That(status == "Completed", $"status '{status}': {app.StatusDetail}");
-        target.AssertContains(text);
-        return $"{text.Length:N0} chars exact in {elapsed.TotalSeconds:0.00} s ≈ {text.Length / Math.Max(elapsed.TotalSeconds, 0.001):N0} chars/s";
+        var lag = target.WaitForText(text, TimeSpan.FromSeconds(120));
+        var total = watch.Elapsed;
+        Assert.That(lag < TimeSpan.FromSeconds(3), $"exact text arrived, but {lag.TotalSeconds:0.0} s after TypePaste reported completion (backlog in the target)");
+        return $"{text.Length:N0} chars exact in {total.TotalSeconds:0.00} s ≈ {text.Length / Math.Max(total.TotalSeconds, 0.001):N0} chars/s " +
+               $"(TypePaste done after {elapsed.TotalSeconds:0.00} s)";
     }
 
     private void TypingIntoTextBox()
@@ -156,6 +163,25 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
             report.Check("Unicode and emoji", () => TypeWithHotkey(target, Samples.Unicode));
             report.Check("long text (20,000 characters)", () => TypeWithHotkey(target, Samples.Long(20_000)));
             report.Check("tab characters stay in the textarea", () => TypeWithHotkey(target, Samples.Tabs), informational: true);
+            report.Check("Esc stops typing in the browser without a backlog", () =>
+            {
+                var text = Samples.Long(50_000);
+                app.LoadText(text);
+                app.Minimize();
+                target.Prepare();
+                Win32.Press(Win32.VK_F6);
+                Wait.Until(() => target.Length > 1500, TimeSpan.FromSeconds(60), "typing to start");
+                var atEsc = target.Length;
+                Win32.Press(Win32.VK_ESCAPE);
+                var status = app.WaitForResult(TimeSpan.FromSeconds(10));
+                var final = target.SettledLength();
+                var expected = Samples.AsTextArea(text);
+                var state = target.State;
+                Assert.That(status == "Stopped", $"status '{status}': {app.StatusDetail}");
+                Assert.That(final < expected.Length && state.Hash == Samples.Fnv1a(expected[..final]), "typed text is not an exact prefix");
+                Assert.That(final - atEsc < 500, $"{final - atEsc} characters were still typed after Esc");
+                return $"{atEsc:N0} chars when Esc was pressed, {final:N0} final (+{final - atEsc:N0}); prefix exact";
+            });
         }
         finally
         {
@@ -245,7 +271,7 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
             Win32.Press(Win32.VK_F6);
             var status = app.WaitForResult(TimeoutFor(text.Length));
             Assert.That(status == "Completed", $"status '{status}': {app.StatusDetail}");
-            Plain.AssertContains(text);
+            Plain.WaitForText(text, TimeSpan.FromSeconds(30));
             return $"{text.Length:N0} chars typed exactly once";
         });
 
@@ -341,7 +367,7 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
             var status = app.WaitForResult(TimeoutFor(text.Length));
             Assert.That(whileHeld == 0, $"{whileHeld} characters were typed while modifiers were held");
             Assert.That(status == "Completed", $"status '{status}': {app.StatusDetail}");
-            Plain.AssertContains(text);
+            Plain.WaitForText(text, TimeSpan.FromSeconds(30));
             return "nothing typed while Ctrl+Shift were held; exact text after release";
         });
     }
@@ -399,7 +425,7 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
             targets.Focus(targets.Plain);
             var status = app.WaitForResult(TimeSpan.FromSeconds(30));
             Assert.That(status == "Completed", $"status '{status}': {app.StatusDetail}");
-            Plain.AssertContains(text);
+            Plain.WaitForText(text, TimeSpan.FromSeconds(30));
             Thread.Sleep(300);
             report.Screenshot("overlay-completed");
             return "countdown → typed exactly";
@@ -446,7 +472,7 @@ internal sealed class Scenarios(Report report, AppDriver app, TargetHost targets
             Win32.Press(Win32.VK_F6);
             var expectedLength = Samples.AsEditControl(text).Length;
             Wait.Until(() => Plain.Length >= expectedLength, TimeoutFor(text.Length), "remembered text to be typed");
-            Plain.AssertContains(text);
+            Plain.WaitForText(text, TimeSpan.FromSeconds(30));
             return "hidden window, remembered text typed exactly";
         });
 

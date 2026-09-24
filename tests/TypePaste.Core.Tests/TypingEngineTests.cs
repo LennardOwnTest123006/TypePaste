@@ -273,7 +273,11 @@ public class TypingEngineTests
 
         Assert.Equal(TypingOutcome.Completed, result.Outcome);
         Assert.Equal(1, platform.IdleWaits);
-        Assert.Equal(10, platform.BatchSizes.Count);
+
+        // First batch at full size, then smaller batches with a pause in between.
+        Assert.Equal(64, platform.BatchSizes[0]);
+        Assert.All(platform.BatchSizes.Skip(1), size => Assert.Equal(TypingEngine.FallbackBatchSize * 2, size));
+        Assert.Equal(1 + ((320 - 32) / TypingEngine.FallbackBatchSize), platform.BatchSizes.Count);
     }
 
     [Fact]
