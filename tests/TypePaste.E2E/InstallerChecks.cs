@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32;
 
 namespace TypePaste.E2E;
@@ -17,9 +18,16 @@ internal static class InstallerChecks
 
     public static string DesktopShortcut => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), "TypePaste.lnk");
 
-    /// <summary>Opens the installer wizard, screenshots the first pages, then cancels.</summary>
-    public static string InstallerUi(string setup, Report report)
+    /// <summary>The user's Downloads folder, as Windows reports it (it can be moved).</summary>
+    public static string DownloadsShortcut => Path.Combine(SHGetKnownFolderPath(FolderIdDownloads, 0, 0), "TypePaste.lnk");
+
+    /// <summary>
+    /// Installs through the wizard like a user would (accepting the defaults) and checks that TypePaste opens by
+    /// itself once the installation has finished.
+    /// </summary>
+    public static string InteractiveInstall(string setup, Report report)
     {
+        var watch = Stopwatch.StartNew();
         using var process = Process.Start(new ProcessStartInfo(setup) { UseShellExecute = true })!;
         try
         {
@@ -28,16 +36,32 @@ internal static class InstallerChecks
                 TimeSpan.FromSeconds(60), "installer window");
             Thread.Sleep(1500);
             var title = Win32.GetWindowText(window);
-            report.Screenshot("installer-welcome");
-            Win32.SetForegroundWindow(window);
-            Win32.Press(Win32.VK_RETURN);
-            Thread.Sleep(1200);
-            report.Screenshot("installer-components");
-            Win32.Press(Win32.VK_RETURN);
-            Thread.Sleep(1200);
-            report.Screenshot("installer-directory");
             Assert.That(title.StartsWith("TypePaste", StringComparison.Ordinal), $"unexpected installer title '{title}'");
-            return $"wizard opened: '{title}'";
+            report.Screenshot("installer-welcome");
+            NextPage(window);
+            report.Screenshot("installer-components");
+            NextPage(window);
+            report.Screenshot("installer-directory");
+            NextPage(window); // Install
+
+            var app = Wait.Until(() => AppWindows().FirstOrDefault(), TimeSpan.FromSeconds(180), "TypePaste to open after the installation");
+            var opened = watch.Elapsed;
+            Thread.Sleep(2000);
+            report.Screenshot("installer-finished-typepaste-open");
+            var inFront = Win32.GetForegroundWindow() == app;
+            Assert.That(!process.HasExited, "the installer closed before showing its finish page");
+
+            var pid = Win32.ProcessIdOf(app);
+            using var running = Process.GetProcessById(pid);
+            var path = running.MainModule?.FileName ?? string.Empty;
+            Assert.That(path.StartsWith(InstallDirectory, StringComparison.OrdinalIgnoreCase), $"TypePaste started from {path}");
+
+            NextPage(window); // Finish
+            Assert.That(process.WaitForExit(30_000), "the installer did not close after clicking Finish");
+            Assert.That(process.ExitCode == 0, $"installer exit code {process.ExitCode}");
+            CloseApp(running);
+            return $"installed through the wizard; TypePaste opened by itself {opened.TotalSeconds:0.0} s after starting the setup " +
+                   $"({(inFront ? "in front" : "behind another window")}); Finish closed the wizard";
         }
         finally
         {
@@ -49,13 +73,38 @@ internal static class InstallerChecks
         }
     }
 
+    /// <summary>Clicks the wizard's default button (Next, Install or Finish).</summary>
+    private static void NextPage(nint installer)
+    {
+        Win32.PostMessageW(installer, Win32.WM_COMMAND, 1 /* IDOK */, 0);
+        Thread.Sleep(1500);
+    }
+
+    /// <summary>Visible TypePaste main windows.</summary>
+    public static List<nint> AppWindows() =>
+        Win32.TopLevelWindows(h => Win32.IsWindowVisible(h) && Win32.GetWindowText(h) == "TypePaste" && Win32.GetClassName(h).StartsWith("HwndWrapper", StringComparison.Ordinal));
+
+    /// <summary>Asks a running TypePaste to exit the way the installer does and waits for it.</summary>
+    public static void CloseApp(Process running)
+    {
+        var message = Win32.TopLevelWindows(h => Win32.GetClassName(h) == AppDriver.MessageWindowClass && Win32.ProcessIdOf(h) == running.Id).FirstOrDefault();
+        Win32.PostMessageW(message, Win32.WM_CLOSE, 0, 0);
+        Assert.That(running.WaitForExit(15_000), "TypePaste did not exit when asked");
+    }
+
     public static string SilentInstall(string setup)
     {
         var watch = Stopwatch.StartNew();
         using var process = Process.Start(new ProcessStartInfo(setup, "/S") { UseShellExecute = true })!;
         Assert.That(process.WaitForExit(180_000), "installer did not finish within 3 minutes");
         Assert.That(process.ExitCode == 0, $"installer exit code {process.ExitCode}");
-        return $"installed in {watch.Elapsed.TotalSeconds:0.0} s";
+        var elapsed = watch.Elapsed;
+
+        // Unattended installs never start the app.
+        Thread.Sleep(3000);
+        var started = Process.GetProcessesByName("TypePaste");
+        Assert.That(started.Length == 0, "a silent install started TypePaste");
+        return $"installed in {elapsed.TotalSeconds:0.0} s; TypePaste was not started";
     }
 
     public static string VerifyInstallation(string publishListFile)
@@ -71,6 +120,11 @@ internal static class InstallerChecks
         var installed = Directory.GetFiles(InstallDirectory, "*", SearchOption.AllDirectories).Length;
         Assert.That(File.Exists(StartMenuShortcut), $"Start menu shortcut missing: {StartMenuShortcut}");
         Assert.That(File.Exists(DesktopShortcut), $"desktop shortcut missing: {DesktopShortcut}");
+        Assert.That(File.Exists(DownloadsShortcut), $"Downloads shortcut missing: {DownloadsShortcut}");
+        foreach (var shortcut in new[] { StartMenuShortcut, DesktopShortcut, DownloadsShortcut })
+        {
+            Assert.That(PointsTo(shortcut, exe), $"{shortcut} does not point to {exe}");
+        }
 
         using var key = Registry.LocalMachine.OpenSubKey(UninstallKey);
         Assert.That(key is not null, "uninstall registry key missing");
@@ -79,7 +133,7 @@ internal static class InstallerChecks
         Assert.That(((string?)key.GetValue("DisplayIcon"))?.Contains("TypePaste.exe", StringComparison.Ordinal) == true, "DisplayIcon wrong");
 
         var version = FileVersionInfo.GetVersionInfo(exe);
-        return $"{installed} files ({expected.Count} runtime files + uninstaller), shortcuts and uninstall entry present; " +
+        return $"{installed} files ({expected.Count} runtime files + uninstaller), Start menu, desktop and Downloads shortcuts and uninstall entry present; " +
                $"TypePaste.exe {version.FileVersion}, product '{version.ProductName}', {(key.GetValue("EstimatedSize") is int kb ? kb / 1024 : 0)} MB";
     }
 
@@ -114,6 +168,12 @@ internal static class InstallerChecks
         Assert.That(app.HasExited, "the running TypePaste was not closed by the uninstaller");
         Assert.That(!File.Exists(StartMenuShortcut), "Start menu shortcut still present");
         Assert.That(!File.Exists(DesktopShortcut), "desktop shortcut still present");
+        Assert.That(!File.Exists(DownloadsShortcut), "Downloads shortcut still present");
+        foreach (var folder in new[] { Environment.SpecialFolder.ApplicationData, Environment.SpecialFolder.LocalApplicationData })
+        {
+            var data = Path.Combine(Environment.GetFolderPath(folder), "TypePaste");
+            Assert.That(!Directory.Exists(data), $"{data} still present");
+        }
         using (var key = Registry.LocalMachine.OpenSubKey(UninstallKey))
         {
             Assert.That(key is null, "uninstall registry key still present");
@@ -124,9 +184,23 @@ internal static class InstallerChecks
             Assert.That(run?.GetValue("TypePaste") is null, "startup entry still present");
         }
 
-        return $"removed in {watch.Elapsed.TotalSeconds:0.0} s: folder, shortcuts and registry entries gone" +
+        return $"removed in {watch.Elapsed.TotalSeconds:0.0} s: folder, all shortcuts, settings and registry entries gone" +
                (appWasRunning ? "; running app was closed first" : string.Empty);
     }
+
+    /// <summary>Whether a .lnk file targets <paramref name="target"/> (its path is stored as ANSI and/or UTF-16).</summary>
+    private static bool PointsTo(string shortcut, string target)
+    {
+        var bytes = File.ReadAllBytes(shortcut);
+        return Encoding.Latin1.GetString(bytes).Contains(target, StringComparison.OrdinalIgnoreCase) ||
+               Encoding.Unicode.GetString(bytes).Contains(target, StringComparison.OrdinalIgnoreCase) ||
+               Encoding.Unicode.GetString(bytes, 1, bytes.Length - 1).Contains(target, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static readonly Guid FolderIdDownloads = new("374DE290-123F-4565-9164-39C4925E467B");
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, PreserveSig = false)]
+    private static extern string SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid id, uint flags, nint token);
 
     private static Dictionary<int, byte[]> ReadIcoImages(byte[] ico)
     {

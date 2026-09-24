@@ -19,6 +19,7 @@ internal static unsafe class Win32
     public const ushort VK_LCONTROL = 0xA2;
 
     public const int WM_CLOSE = 0x0010;
+    public const int WM_COMMAND = 0x0111;
     public const int WM_SETTEXT = 0x000C;
     public const int WM_GETTEXT = 0x000D;
     public const int WM_GETTEXTLENGTH = 0x000E;

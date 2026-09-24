@@ -22,14 +22,16 @@ and press **F6**. TypePaste types the text with real keyboard input, very fast a
 
 ## Install
 
-Run **`TypePaste Setup.exe`** and follow the wizard. It installs TypePaste to `C:\Program Files\TypePaste`, adds a
-Start menu shortcut and (optionally) a desktop shortcut and sign-in start. Everything TypePaste needs is included —
-no .NET or other runtime has to be installed. Uninstall from *Settings → Apps* or the Start menu like any other app.
+Run **`TypePaste Setup.exe`** (one ≈ 25 MB file) and follow the wizard. It installs TypePaste to
+`C:\Program Files\TypePaste`, adds shortcuts to the Start menu, the desktop and your Downloads folder, and opens
+TypePaste as soon as the installation has finished. Starting TypePaste when you sign in is optional. Everything
+TypePaste needs is included — no .NET or other runtime has to be installed. Uninstall from *Settings → Apps* or the
+Start menu like any other app.
 
 The installer is not code-signed, so Windows SmartScreen may show "Windows protected your PC" the first time; click
 **More info → Run anyway**.
 
-Silent install/uninstall for administrators:
+Silent install/uninstall for administrators (a silent install does not start TypePaste):
 
 ```
 "TypePaste Setup.exe" /S [/D=C:\Custom\Path]
@@ -97,7 +99,8 @@ powershell -ExecutionPolicy Bypass -File build\build.ps1
 ./build/build.sh
 ```
 
-Both produce `artifacts/TypePaste Setup.exe` (≈ 44 MB, self-contained) and the app in `artifacts/publish/`.
+Both produce `artifacts/TypePaste Setup.exe` (≈ 25 MB, self-contained; unused parts of the .NET runtime are trimmed)
+and the app in `artifacts/publish/`.
 
 For development, open `TypePaste.sln` in Visual Studio 2022/2026 or run `dotnet run --project src/TypePaste`.
 
@@ -139,8 +142,9 @@ on a precise high-resolution timer.
 - `dotnet test tests/TypePaste.Core.Tests` — 91 unit tests for the engine, keystroke planner, statistics, hotkeys
   and settings (runs on any OS).
 - `tests/TypePaste.E2E` — Windows end-to-end suite used by CI on Windows Server 2022 (Windows 10 based) and
-  Windows Server 2025 (Windows 11 based). It installs `TypePaste Setup.exe` silently, verifies files, shortcuts,
-  registry entries and that every icon is the TypePaste logo, then presses the real F6/Esc keys to type into a
+  Windows Server 2025 (Windows 11 based). It installs `TypePaste Setup.exe` through the wizard (checking that
+  TypePaste opens by itself afterwards) and again silently over that installation, verifies files, the Start menu,
+  desktop and Downloads shortcuts, registry entries and that every icon is the TypePaste logo, then presses the real F6/Esc keys to type into a
   WinForms TextBox, a RichEdit control, Notepad and a Microsoft Edge text area (multi-line text, all ASCII symbols,
   Unicode and emoji, 100,000-character text, tabs), tests stopping with Esc, focus changes, closed targets, repeated
   F6 presses, every speed and input mode, custom hotkeys, the Start countdown, the test pad, tray mode and themes,

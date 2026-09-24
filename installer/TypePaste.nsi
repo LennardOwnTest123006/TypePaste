@@ -3,7 +3,7 @@
 ; Build with build/build.sh (Linux) or build/build.ps1 (Windows). Those scripts publish the app to
 ; artifacts/publish and generate installer/generated/*.nsh with the exact file list before calling makensis.
 ;
-; Silent install:    "TypePaste Setup.exe" /S [/D=C:\Path\To\TypePaste]
+; Silent install:    "TypePaste Setup.exe" /S [/D=C:\Path\To\TypePaste]   (does not start TypePaste)
 ; Silent uninstall:  "C:\Program Files\TypePaste\Uninstall.exe" /S [/KEEPDATA]
 
 Unicode true
@@ -73,11 +73,10 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
+; TypePaste opens by itself as soon as the installation has finished.
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW LaunchTypePaste
 !define MUI_FINISHPAGE_TITLE "TypePaste is ready"
-!define MUI_FINISHPAGE_TEXT "Paste or type your text into TypePaste, click into any text field and press F6. Press Esc to stop.$\r$\n$\r$\nTypePaste stays available in the notification area."
-!define MUI_FINISHPAGE_RUN
-!define MUI_FINISHPAGE_RUN_TEXT "Launch TypePaste"
-!define MUI_FINISHPAGE_RUN_FUNCTION LaunchTypePaste
+!define MUI_FINISHPAGE_TEXT "TypePaste is installed and has been opened for you.$\r$\n$\r$\nPaste or type your text into TypePaste, click into any text field and press F6. Press Esc to stop.$\r$\n$\r$\nTypePaste stays available in the notification area."
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -136,7 +135,22 @@ FunctionEnd
 
 ; Starts TypePaste with normal user rights (the installer itself runs as administrator).
 Function LaunchTypePaste
+  ; The installer owns the foreground; let TypePaste bring its window to the front.
+  System::Call 'user32::AllowSetForegroundWindow(i -1)'
   Exec '"$WINDIR\explorer.exe" "$INSTDIR\${APP_EXE}"'
+FunctionEnd
+
+; Returns the user's Downloads folder in $0 (it can be moved, so ask Windows where it is).
+Function GetDownloadsFolder
+  StrCpy $0 ""
+  System::Call 'shell32::SHGetKnownFolderPath(g "{374DE290-123F-4565-9164-39C4925E467B}", i 0, p 0, *p .r1) i .r2'
+  ${If} $2 = 0
+    System::Call '*$1(&w${NSIS_MAX_STRLEN} .r0)'
+  ${EndIf}
+  System::Call 'ole32::CoTaskMemFree(p r1)'
+  ${If} $0 == ""
+    StrCpy $0 "$PROFILE\Downloads"
+  ${EndIf}
 FunctionEnd
 
 ; ------------------------------------------------------------------ Install
@@ -179,6 +193,14 @@ Section "Desktop shortcut" SecDesktop
   CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\${APP_EXE}" 0 SW_SHOWNORMAL "" "${DESCRIPTION}"
 SectionEnd
 
+Section "Downloads folder shortcut" SecDownloads
+  Call GetDownloadsFolder
+  CreateDirectory "$0"
+  CreateShortcut "$0\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\${APP_EXE}" 0 SW_SHOWNORMAL "" "${DESCRIPTION}"
+  ; Remembered so the uninstaller removes exactly this shortcut.
+  WriteRegStr HKLM "${UNINSTALL_KEY}" "DownloadsShortcut" "$0\${APP_NAME}.lnk"
+SectionEnd
+
 Section /o "Start TypePaste when I sign in" SecStartup
   WriteRegStr HKCU "${RUN_KEY}" "${APP_NAME}" '"$INSTDIR\${APP_EXE}" --tray'
 SectionEnd
@@ -186,6 +208,7 @@ SectionEnd
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecApp} "The TypePaste application with everything it needs to run (no separate runtime required)."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Adds a TypePaste shortcut to the desktop."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecDownloads} "Adds a TypePaste shortcut to your Downloads folder."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecStartup} "Starts TypePaste quietly in the notification area when you sign in."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
@@ -201,6 +224,10 @@ Section "Uninstall"
   SetShellVarContext all
   Delete "$SMPROGRAMS\${APP_NAME}.lnk"
   Delete "$DESKTOP\${APP_NAME}.lnk"
+  ReadRegStr $0 HKLM "${UNINSTALL_KEY}" "DownloadsShortcut"
+  ${If} $0 != ""
+    Delete "$0"
+  ${EndIf}
   DeleteRegKey HKLM "${UNINSTALL_KEY}"
 
   ; Per-user traces of the account running the uninstaller. /KEEPDATA is used when upgrading.

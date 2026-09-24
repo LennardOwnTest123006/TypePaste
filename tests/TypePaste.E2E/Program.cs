@@ -8,7 +8,7 @@ namespace TypePaste.E2E;
 ///
 ///   TypePaste.E2E.exe --setup "TypePaste Setup.exe" --ico TypePaste.ico --files publish-files.txt --out results
 ///
-/// Installs TypePaste silently, verifies the installation and icons, runs the typing scenarios against the installed
+/// Installs TypePaste with the wizard and silently, verifies the installation and icons, runs the typing scenarios against the installed
 /// app, uninstalls it and writes results/report.md plus screenshots. The exit code is the number of failed checks.
 /// </summary>
 internal static class Program
@@ -33,12 +33,14 @@ internal static class Program
 
         report.Area = "Installer";
         report.Check("installer icon is the TypePaste logo", () => InstallerChecks.VerifyIcon(setup, ico));
-        report.Check("installer wizard opens", () => InstallerChecks.InstallerUi(setup, report));
-        var installed = report.Check("silent install", () => InstallerChecks.SilentInstall(setup));
+        report.Check("install with the wizard opens TypePaste automatically", () => InstallerChecks.InteractiveInstall(setup, report));
+        var installed = report.Check("silent reinstall over the existing installation", () => InstallerChecks.SilentInstall(setup));
         report.Check("all files, shortcuts and uninstall entry present", () => InstallerChecks.VerifyInstallation(files));
         report.Check("TypePaste.exe icon is the TypePaste logo", () => InstallerChecks.VerifyIcon(exe, ico));
         report.Check("Uninstall.exe icon is the TypePaste logo", () => InstallerChecks.VerifyIcon(Path.Combine(InstallerChecks.InstallDirectory, "Uninstall.exe"), ico));
-        report.Check("Start menu shortcut launches TypePaste", () => LaunchFromShortcut(report));
+        report.Check("Start menu shortcut launches TypePaste", () => LaunchFromShortcut(InstallerChecks.StartMenuShortcut, "start-menu", report));
+        report.Check("desktop shortcut launches TypePaste", () => LaunchFromShortcut(InstallerChecks.DesktopShortcut, "desktop", report));
+        report.Check("Downloads shortcut launches TypePaste", () => LaunchFromShortcut(InstallerChecks.DownloadsShortcut, "downloads", report));
 
         if (installed)
         {
@@ -76,20 +78,15 @@ internal static class Program
         return report.Failures;
     }
 
-    private static string LaunchFromShortcut(Report report)
+    private static string LaunchFromShortcut(string shortcut, string name, Report report)
     {
-        using var process = Process.Start(new ProcessStartInfo(InstallerChecks.StartMenuShortcut) { UseShellExecute = true });
-        var window = Wait.Until(
-            () => Win32.TopLevelWindows(h => Win32.IsWindowVisible(h) && Win32.GetWindowText(h) == "TypePaste" && Win32.GetClassName(h).StartsWith("HwndWrapper", StringComparison.Ordinal)).FirstOrDefault(),
-            TimeSpan.FromSeconds(60), "TypePaste window from the Start menu shortcut");
+        using var process = Process.Start(new ProcessStartInfo(shortcut) { UseShellExecute = true });
+        var window = Wait.Until(() => InstallerChecks.AppWindows().FirstOrDefault(), TimeSpan.FromSeconds(60), $"TypePaste window from {shortcut}");
         Thread.Sleep(1500);
-        report.Screenshot("first-launch-from-start-menu");
-        var pid = Win32.ProcessIdOf(window);
-        using var running = Process.GetProcessById(pid);
+        report.Screenshot($"launch-from-{name}-shortcut");
+        using var running = Process.GetProcessById(Win32.ProcessIdOf(window));
         var path = running.MainModule?.FileName ?? string.Empty;
-        var message = Win32.TopLevelWindows(h => Win32.GetClassName(h) == AppDriver.MessageWindowClass && Win32.ProcessIdOf(h) == pid).FirstOrDefault();
-        Win32.PostMessageW(message, Win32.WM_CLOSE, 0, 0);
-        Assert.That(running.WaitForExit(15_000), "TypePaste did not exit when asked");
+        InstallerChecks.CloseApp(running);
         Assert.That(path.StartsWith(InstallerChecks.InstallDirectory, StringComparison.OrdinalIgnoreCase), $"started from {path}");
         return $"started {path} and exited cleanly";
     }
