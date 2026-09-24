@@ -71,19 +71,26 @@ internal sealed class NotepadTarget : IDisposable
 }
 
 /// <summary>A &lt;textarea&gt; in Microsoft Edge; the page publishes length and hash of its value in the window title.</summary>
+/// <remarks>
+/// The first time Edge draws scripts or emoji that its default font lacks, its renderer loads the system font
+/// collection (up to ~10 s on a fresh CI image) while the browser's UI thread sits idle. That one-time browser start-up
+/// cost is not typing backlog, so the page lays out the Unicode sample off-screen and reports ready only afterwards,
+/// just as a browser that has already shown such text would be.
+/// </remarks>
 internal sealed class EdgeTarget : IDisposable
 {
     private const string Page = """
         <!doctype html>
-        <html><head><meta charset="utf-8"><title>TPE2E|0|811c9dc5</title>
-        <style>html,body{margin:0;height:100%;background:#fff}textarea{box-sizing:border-box;width:100%;height:100%;border:0;padding:16px;font:15px Consolas,monospace}</style>
-        </head><body><textarea id="t" spellcheck="false" autofocus></textarea>
+        <html><head><meta charset="utf-8"><title>TPE2E-loading</title>
+        <style>html,body{margin:0;height:100%;background:#fff}textarea,#warm{box-sizing:border-box;width:100%;height:100%;border:0;padding:16px;font:15px Consolas,monospace}#warm{position:absolute;left:-10000px;top:0;white-space:pre}</style>
+        </head><body><textarea id="t" spellcheck="false" autofocus></textarea><div id="warm">{{WARM_UP_TEXT}}</div>
         <script>
         const t = document.getElementById('t');
         function hash(s){let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}return h.toString(16).padStart(8,'0');}
         let pending = false; function publish(){document.title='TPE2E|'+t.value.length+'|'+hash(t.value);}
         t.addEventListener('input',()=>{ if(!pending){ pending=true; setTimeout(()=>{ pending=false; publish(); }, 100); } });
-        publish();
+        document.getElementById('warm').getBoundingClientRect(); // lays out (and so loads fonts for) the warm-up text
+        requestAnimationFrame(()=>requestAnimationFrame(publish));
         </script></body></html>
         """;
 
@@ -99,7 +106,7 @@ internal sealed class EdgeTarget : IDisposable
         }.FirstOrDefault(File.Exists) ?? throw new CheckFailedException("Microsoft Edge is not installed");
 
         var page = Path.Combine(workDirectory, "edge-target.html");
-        File.WriteAllText(page, Page);
+        File.WriteAllText(page, Page.Replace("{{WARM_UP_TEXT}}", System.Net.WebUtility.HtmlEncode(Samples.Unicode + "\n" + Samples.Symbols), StringComparison.Ordinal));
         _profile = Path.Combine(workDirectory, "edge-profile");
         var start = new ProcessStartInfo(edge) { UseShellExecute = false };
         foreach (var argument in new[]
