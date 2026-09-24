@@ -44,6 +44,10 @@ public partial class TestPadWindow : Window
         Keyboard.Focus(TestBox);
     }
 
+    /// <summary>True once the pad is the active window and its text box has keyboard focus.</summary>
+    public bool IsReadyForInput => IsActive && TestBox.IsKeyboardFocused &&
+        Native.NativeMethods.GetForegroundWindow() == Handle;
+
     /// <summary>
     /// Compares what arrived in the pad with what should have arrived and shows the verdict. Keystrokes that are still
     /// queued are given up to a few seconds to arrive first.

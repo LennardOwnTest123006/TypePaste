@@ -453,10 +453,18 @@ internal sealed class MainViewModel : ObservableObject
             pad.PrepareForTyping();
             SetStatus(StatusKind.Waiting, "Preparing test…", "TypePaste is about to type into the test pad.");
 
-            // Let the pad become the active window before the first keystroke.
+            // Let the pad become the active window with a focused text box before the first keystroke.
             try
             {
-                await Task.Delay(350, session.Token);
+                var deadline = DateTime.UtcNow.AddSeconds(3);
+                await Task.Delay(150, session.Token);
+                while (!pad.IsReadyForInput && DateTime.UtcNow < deadline)
+                {
+                    pad.PrepareForTyping();
+                    await Task.Delay(100, session.Token);
+                }
+
+                await Task.Delay(200, session.Token);
             }
             catch (TaskCanceledException)
             {
